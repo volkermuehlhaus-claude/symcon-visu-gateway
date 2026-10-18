@@ -4,6 +4,7 @@ import hashlib
 import json
 
 import pytest
+from fake_ips import LINK
 from fastmcp import Client
 
 from visu_gateway.config import ConfigError, load_config
@@ -45,6 +46,19 @@ async def test_get_links_resolves_targets(mcp):
     assert out["count"] == 1
     link = out["links"][0]
     assert link["target_id"] == 110 and link["target_name"] == "Temperatur" and link["formatted"] == "21,5"
+
+
+async def test_links_and_children_ordered_like_webfront_with_hidden_and_icon(mcp, world):
+    f = world.fake
+    f.objs[502]["ObjectPosition"] = 5
+    f.add(None, "Versteckt", LINK, 501, TargetID=110, ObjectPosition=1, ObjectIsHidden=True)
+    f.add(None, "Erster", LINK, 501, TargetID=110, ObjectPosition=0, ObjectIcon="Temperature")
+    links = json.loads(await call(mcp, "visu_get_links", parent_id=501))["links"]
+    assert [lk["link_name"] for lk in links] == ["Erster", "Versteckt", "Link Temp"]
+    assert links[0]["icon"] == "Temperature" and "hidden" not in links[0]
+    assert links[1]["hidden"] is True and links[2]["position"] == 5
+    kids = json.loads(await call(mcp, "visu_list_children", object_id=501))["children"]
+    assert [k["name"] for k in kids] == ["Erster", "Versteckt", "Link Temp"]
 
 
 async def test_secret_variable_never_visible_through_tools(mcp):

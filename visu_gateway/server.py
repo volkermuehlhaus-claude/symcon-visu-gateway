@@ -73,6 +73,21 @@ def _kind(obj: dict[str, Any]) -> Any:
     return OBJECT_TYPES.get(obj.get("ObjectType"), obj.get("ObjectType"))
 
 
+def _display(obj: dict[str, Any]) -> dict[str, Any]:
+    """Darstellungsrelevante Felder eines Objekts: Position, ausgeblendet, Icon (leer = Standard)."""
+    out: dict[str, Any] = {"position": obj.get("ObjectPosition", 0)}
+    if obj.get("ObjectIsHidden"):
+        out["hidden"] = True
+    if obj.get("ObjectIcon"):
+        out["icon"] = obj["ObjectIcon"]
+    return out
+
+
+def _order(entry: dict[str, Any]) -> tuple[int, str]:
+    """Reihenfolge wie im WebFront: Position, dann Name."""
+    return entry.get("position", 0), str(entry.get("name") or entry.get("link_name") or "")
+
+
 def build_server(guard: GuardedClient, auth: TokenVerifier | None = None) -> FastMCP:
     mcp = FastMCP("symcon_visu_gateway", instructions=INSTRUCTIONS, auth=auth)
     ro = {"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False}
@@ -135,7 +150,8 @@ def build_server(guard: GuardedClient, auth: TokenVerifier | None = None) -> Fas
             for cid in await guard.call("IPS_GetChildrenIDs", [object_id]) or []:
                 obj = await guard.call("IPS_GetObject", [cid])
                 obj = obj if isinstance(obj, dict) else {}
-                children.append({"id": cid, "name": obj.get("ObjectName"), "type": _kind(obj)})
+                children.append({"id": cid, "name": obj.get("ObjectName"), "type": _kind(obj), **_display(obj)})
+            children.sort(key=_order)
             return _dumps({"parent_id": object_id, "count": len(children), "children": children})
         except Exception as e:  # noqa: BLE001
             return _error(e)
@@ -223,8 +239,9 @@ def build_server(guard: GuardedClient, auth: TokenVerifier | None = None) -> Fas
                 if not isinstance(obj, dict) or obj.get("ObjectType") != 6:
                     continue
                 if len(out) >= 200:
+                    out.sort(key=_order)
                     return _dumps({"parent_id": parent_id, "links": out, "truncated": "Limit 200 erreicht."})
-                entry: dict[str, Any] = {"link_id": cid, "link_name": obj.get("ObjectName")}
+                entry: dict[str, Any] = {"link_id": cid, "link_name": obj.get("ObjectName"), **_display(obj)}
                 try:
                     target = (await guard.call("IPS_GetLink", [cid]) or {}).get("TargetID")
                     entry["target_id"] = target
@@ -244,6 +261,7 @@ def build_server(guard: GuardedClient, auth: TokenVerifier | None = None) -> Fas
                 except IPSError as e:
                     entry["error"] = e.message
                 out.append(entry)
+            out.sort(key=_order)
             return _dumps({"parent_id": parent_id, "count": len(out), "links": out})
         except Exception as e:  # noqa: BLE001
             return _error(e)
