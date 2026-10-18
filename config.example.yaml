@@ -1,0 +1,14 @@
+# Beispielkonfiguration des Gateways. Echte Datei NICHT einchecken und für das Konto von Claude Code unlesbar ablegen.
+symcon:
+  url: http://127.0.0.1:3777/api/      # JSON-RPC von IP-Symcon (auf dem Symcon-Rechner: nur localhost)
+  user: gateway                        # eigener Symcon-Benutzer nur für das Gateway
+  password: ""
+target_category_id: 0                  # Objekt-ID von "Kachelvisu-Neu" (muss > 0 sein)
+enable_write: false                    # erst nach Freigabe auf true
+audit_log: gateway-audit.jsonl         # jeder Schreibvorgang wird vorher protokolliert
+server:                                # nur für --transport https
+  host: 0.0.0.0
+  port: 8765
+  tls_cert: gateway.crt
+  tls_key: gateway.key
+  token_sha256: []                     # SHA-256-Hashes der erlaubten Tokens (python -m visu_gateway.token)

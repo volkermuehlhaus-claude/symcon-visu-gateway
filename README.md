@@ -1,219 +1,26 @@
-# ipsymcon-mcp-server
+# symcon-visu-gateway
 
-[![CI](https://github.com/Schimmilab/ipsymcon-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/Schimmilab/ipsymcon-mcp-server/actions/workflows/ci.yml)
+Abgesichertes MCP-Gateway zu IP-Symcon, um per Claude Code eine Kachelvisualisierung aufzubauen.
+Fork von [Schimmilab/ipsymcon-mcp-server](https://github.com/Schimmilab/ipsymcon-mcp-server) (MIT), stark reduziert:
+`client.py` stammt vom Upstream, alles andere ist neu. Lizenz und Urheberhinweis siehe `LICENSE`.
 
-MCP-Server für **IP-Symcon** — lässt Claude/Agenten eine IP-Symcon-Hausautomation nicht nur
-abfragen und steuern, sondern **entwickeln**: Objektbaum lesen, PHP-Skripte lesen/ändern/anlegen,
-Variablen lesen, Geräte schalten. Über die IP-Symcon JSON-RPC-API.
+## Unterschiede zum Upstream
 
-Stack: Python + FastMCP. Companion-Modul für IP-Symcon-seitiges Log-Lesen:
-[SymconMCPBridge](https://github.com/Schimmilab/SymconMCPBridge) (MIT).
-
----
-
-## Sicherheitsmodell (wichtig)
-
-- **Lese-Tools** sind immer verfügbar.
-- **Schreib-/Dev-Tools** (`ips_set_value`, `ips_request_action`, `ips_run_script`,
-  `ips_set_script_content`, `ips_create_script`, `ips_call`) brauchen die Umgebungsvariable
-  **`IPS_ENABLE_WRITE=true`**. Default ist *aus* — der bewusste Riegel, damit ein Agent nicht
-  unbemerkt in die laufende Hausautomation schreibt.
-- Empfehlung: Schreibzugriff **zuerst gegen eine Test-/Staging-Instanz**, vorher Backup.
-  (Dry-Run + automatisches Snapshot-Backup vor Änderungen sind als nächster Ausbauschritt geplant.)
-
----
-
-## Voraussetzungen in IP-Symcon
-
-1. JSON-RPC-Zugang ist standardmäßig aktiv unter `http://<host>:3777/api/`.
-2. Einen Benutzer mit Zugriff anlegen (Systemsteuerung → Benutzerverwaltung) → in `IPS_USER`/`IPS_PASSWORD` eintragen.
-   Hat die Installation keine Authentifizierung, bleiben beide leer.
-
-## Installation
-
-```bash
-cd ~/workspace/ipsymcon-mcp-server
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-cp .env.example .env   # dann .env mit echten Werten füllen
-```
-
-### Skills als Claude-Plugin
-
-Die fünf Skills unter [`skills/`](skills/) sind als Claude-Code-Plugin gebündelt
-([`.claude-plugin/plugin.json`](.claude-plugin/plugin.json)) und lassen sich damit installieren,
-statt sie von Hand nach `~/.claude/skills/` zu kopieren.
-
-⚠️ **Das Plugin liefert nur die Skills, nicht den Server.** Der MCP-Server wird weiterhin wie oben
-installiert und in der eigenen MCP-Konfiguration eingetragen — er braucht ein venv und eine `.env`
-mit der IPS-Adresse, beides kann ein Plugin nicht mitbringen. **Ohne laufenden Server sind die
-Skills wirkungslos.** (Ein `.mcp.json` im Plugin wird erst sinnvoll, wenn der Server per `uvx`
-installierbar ist — steht auf der Roadmap.)
-
-## Konfiguration (`.env`)
-
-| Variable | Bedeutung |
+| Upstream | Dieses Gateway |
 |---|---|
-| `IPS_URL` | JSON-RPC-Endpunkt, z. B. `https://192.168.1.10:3777/api/` (das `/api/` wird sonst ergänzt) |
-| `IPS_USER` / `IPS_PASSWORD` | Basic-Auth-Zugangsdaten (leer, falls keine Auth) |
-| `IPS_ENABLE_WRITE` | `false` (Default) = nur lesen · `true` = Schreib-/Dev-Tools aktiv |
-| `IPS_INSTANCES_FILE` | optional: Pfad zu einer YAML mit **mehreren benannten Instanzen** (s. u.) |
+| generischer `ips_call` | entfällt; nur gelistete Funktionen (`guard.py`) |
+| Skripte lesen/anlegen/ausführen, Export mit `IPS_GetConfiguration` | entfällt |
+| Werte setzen, Aktionen auslösen | entfällt |
+| Schreiben: ein Ein/Aus-Schalter | Schreiben nur unterhalb der Zielkategorie, Quelle **und** Ziel geprüft, Audit-Log vor jeder Änderung |
+| keine Filter | Secret-Filter auf alle Antworten (`secret_filter.py`) |
+| Zugangsdaten in `.env`, stdio im Konto des Clients | Konfigurationsdatei im Konto des Gateways, HTTPS + Token (nur SHA-256-Hash gespeichert) |
 
-> ⚠️ **`https://` verwenden, sobald `IPS_USER`/`IPS_PASSWORD` gesetzt sind.** Basic Auth überträgt
-> Benutzer und Passwort nur base64-kodiert — über `http://` liest sie jeder mit, der im selben Netz
-> hängt, samt aller Schaltbefehle. IP-Symcon liefert auf Port 3777 standardmäßig unverschlüsseltes
-> HTTP aus; TLS ist also eine bewusste Entscheidung, kein Automatismus.
->
-> ⚠️ **`chmod 600` für `.env` und die echte `instances.yaml`** — beide enthalten Zugangsdaten im Klartext.
->
-> ✅ **Seit 2026-08-15 lässt sich das pro Instanz begrenzen.** In der Instanzen-YAML kann jede
-> Instanz ein `enable_write: true|false` tragen. **Beide Tore müssen zustimmen** — die Env-Variable
-> *und* das Instanz-Flag. `enable_write: true` erlaubt nie etwas allein; `enable_write: false`
-> **entzieht** Schreibrechte aber auch bei gesetzter Env-Variable. Damit ist die Empfehlung, nur
-> gegen eine Testinstanz freizuschalten, erstmals umsetzbar: Migrationsziel offen, bewohntes Haus
-> dicht. Ohne Angabe erbt eine Instanz die Env-Variable — bestehende Setups laufen unverändert.
->
-> ⚠️ **`ips_export_subtree` exportiert Instanz-Konfigurationen nur noch auf ausdrückliche
-> Anforderung** (`include_configuration=true`, Default aus). Diese Blöcke tragen regelmäßig
-> Zugangsdaten von Integrationen (FritzBox, Hue, Cloud-Keys) — sie aus einem als *read-only*
-> markierten Werkzeug herauszugeben machte aus reinem Lesen einen Abfluss von Zugangsdaten in den
-> Modellkontext.
-
-> ⚠️ **`IPS_ENABLE_WRITE=true` ist mehr als „Variablen setzen".** Damit sind auch `ips_create_script`,
-> `ips_run_script` und `ips_call` offen — das ist **Codeausführung auf dem IP-Symcon-Server** mit dessen
-> Rechten. Die „erst planen, dann ausführen"-Regel ist eine Anweisung an das Sprachmodell, **kein
-> technischer Riegel**: Der Server prüft nur dieses eine Boolean. Wer den MCP-Client kontrolliert, hat
-> bei offenem Gate vollen Zugriff auf die Haussteuerung.
-
-### Mehrere Instanzen (Multi-Instance)
-
-Für mehrere IP-Symcon-Ziele (z. B. `home` + ein Migrations-Ziel `linux`): eine YAML-Datei anlegen (Vorlage: [`instances.example.yaml`](instances.example.yaml)) und `IPS_INSTANCES_FILE` darauf zeigen lassen.
-
-```yaml
-default: home
-instances:
-  home:
-    url: https://192.168.1.10:3777/api/
-    user: ""
-    password: ""
-  linux:
-    url: https://192.168.1.20:3777/api/
-```
-
-Jedes Tool nimmt dann einen optionalen `instance`-Parameter (`home`/`linux`); ohne Angabe → `default`. **Abwärtskompatibel:** ohne `IPS_INSTANCES_FILE` gilt das einzelne `IPS_URL` als implizite Default-Instanz — bestehende Setups laufen unverändert. Die echte YAML enthält Credentials → wie `.env` aus git heraushalten (`instances.yaml` ist gitignored).
-
-## Start / Test
-
-```bash
-# direkt starten (stdio)
-.venv/bin/python -m ipsymcon_mcp
-
-# mit MCP Inspector testen
-.venv/bin/python -m mcp dev ipsymcon_mcp/server.py
-```
-
-## Registrierung in Claude Code
-
-```bash
-claude mcp add ipsymcon -s user -- /Users/<user>/workspace/ipsymcon-mcp-server/.venv/bin/python -m ipsymcon_mcp
-```
-(Umgebungsvariablen aus `.env` werden geladen; alternativ per `-e IPS_URL=...` etc. übergeben.)
-
----
-
-## Tools (v0.1)
-
-**Lesen (immer verfügbar):**
-| Tool | IPS-Funktion | Zweck |
-|---|---|---|
-| `ips_get_value` | GetValue | aktuellen Variablenwert lesen |
-| `ips_get_variable` | IPS_GetVariable (+Wert+Name) | Variablen-Metadaten (Typ, Profil, Zeitstempel) |
-| `ips_get_object` | IPS_GetObject | Objekt-Metadaten + Parent/Children (Tree-Navigation) |
-| `ips_list_children` | IPS_GetChildrenIDs | direkte Kinder mit id/name/typ (Baum durchblättern, Start: 0) |
-| `ips_find_object_by_name` | IPS_GetObjectIDByName | Objekt-ID per exaktem Namen finden |
-| `ips_get_variable_by_path` | IPS_GetObjectIDByName (Pfad-Walk) | Variablenwert per Objektpfad lesen (`Räume/Büro/Zustand`) statt per ID |
-| `ips_get_object_tree` | IPS_GetObject/-GetChildrenIDs (rekursiv) | ganzen Teilbaum auf einmal als verschachteltes `{id,name,type,children}` (max_depth) |
-| `ips_snapshot_variables` | GetValue (n×) | Werte mehrerer Variablen als Snapshot festhalten |
-| `ips_diff_variables` | GetValue (n×) | Snapshot gegen Live-Werte diffen → was hat sich geändert (Wirkungskontrolle) |
-| `ips_export_subtree` | IPS_GetObject/-Variable/-ScriptContent/-Event/-Instance/-Link | Teilbaum → reiches JSON für **Backup/Migration** (Variable Typ+Profil+Wert, Skript-Content, Event/Instanz/Link-Detail) |
-| `ips_get_script_content` | IPS_GetScriptContent | PHP-Quelltext eines Skripts lesen |
-
-**Schreiben/Entwickeln (nur mit `IPS_ENABLE_WRITE=true`):**
-| Tool | IPS-Funktion | Zweck |
-|---|---|---|
-| `ips_set_value` | SetValue | Variablenwert direkt setzen |
-| `ips_request_action` | RequestAction | Aktor schalten (löst Action aus) |
-| `ips_run_script` | IPS_RunScript | Skript ausführen (fire-and-confirm, ohne Ausgabe) |
-| `ips_run_script_capture` | IPS_RunScriptWaitEx | Skript ausführen **und die Ausgabe zurückgeben** — Basis fürs agentische bauen→ausführen→prüfen→nachbessern. Optionale `parameters` landen im Skript als `$_IPS['key']`. |
-| `ips_set_script_content` | IPS_SetScriptContent | PHP-Quelltext überschreiben |
-| `ips_create_script` | IPS_CreateScript (+Parent/Name/Content) | neues PHP-Skript anlegen |
-| `ips_create_category` | IPS_CreateCategory | Kategorie anlegen (Objektbaum strukturieren) |
-| `ips_create_variable` | IPS_CreateVariable (+Profil) | typisierte Variable anlegen (`boolean`/`integer`/`float`/`string`, optional Profil) |
-| `ips_create_event` | IPS_CreateEvent | Event-Hülle anlegen (`triggered`/`cyclic`/`weekly`); Detail-Config via `ips_call` |
-| `ips_import_subtree` | IPS_CreateCategory/-Variable/-Script (+SetParent/Name/Profil/Wert/Content) | Teilbaum aus `ips_export_subtree`-JSON mechanisch wiederanlegen → **alte→neue ID-Map** (Restore/Migration). Instanzen/Events/Links → `skipped` (Migrations-Skill). |
-| `ips_call` | beliebig | Generischer Gateway für volle API-Abdeckung (z. B. IPS_CreateInstance, IPS_SetEventCyclic) |
-
-> **Hinweis zu `ips_run_script_capture`:** IP-Symcon erfasst die **Ausgabe** des Skripts (was es `echo`/`print`t) — ein top-level PHP-`return` wird **nicht** zurückgegeben (kommt leer). Das Skript muss sein Ergebnis also `echo`en.
-
----
-
-## Skill (Playbook für Claude Code)
-
-Mitgeliefert in [`skills/ipsymcon/`](skills/ipsymcon/) — das Domänen-Können auf den Tools: **Plan-First-Sicherheitsworkflow** (read → plan → approve → execute → report), Tool-Übersicht, IPS-Objektmodell. Aufgeteilt nach dem Prinzip *Anweisung im Skill, Workflow separat*:
-
-- [`SKILL.md`](skills/ipsymcon/SKILL.md) — die Direktive: die eine Regel (vor Schreibzugriff planen), die 22 Tools, Struktur-Primer.
-- [`references/workflow.md`](skills/ipsymcon/references/workflow.md) — die detaillierten Workflows + Plan-/Report-Templates + Fallstricke.
-- [`references/ips-functions.md`](skills/ipsymcon/references/ips-functions.md) — `ips_call`-Funktions-Cheat-Sheet (Event-Trigger, Profile, Instanzen).
-
-Dazu der eigenständige **Migrations-Skill** [`skills/ips-migration/`](skills/ips-migration/) — Greenfield-Migration eines Teilbaums auf eine andere Instanz (Export → Plan-First mit Modul-Check/Referenz-Scan/Flags → Zwei-Pass: anlegen, dann Referenzen via ID-Map verdrahten → Verify), aufbauend auf `ips_export_subtree`/`ips_import_subtree`.
-
-Und der **Cleanup-Skill** [`skills/ips-cleanup/`](skills/ips-cleanup/) — IPS-Health-Review + *Phase 0* der Migration: Error-Scan (Instanzen mit Status ≥ 200) → Triage → **3-Vektor-Dependency-Analyse** (Kinder · Links · ConnectionID) → Plan-First-Cascade-Delete + sicheres Fixen (Credentials werden geflaggt, nie geraten) → Verify. Erprobte Scan-Snippets mitgeliefert.
-
-Claude Code: nach `~/.claude/skills/ipsymcon/` (bzw. `…/ips-migration/`) kopieren oder dorthin symlinken. So wachsen Tools (MCP) und Playbook (Skill) im selben Repo/Release im Gleichschritt.
-
-### Die Runbooks kommen auch über die MCP-Schnittstelle (v0.5)
-
-Skill-Ordner und Claude-Code-Plugin setzen beide voraus, dass jemand sie **installiert**. Wer den Server ohne das Plugin einbindet — anderer Client, anderer Rechner, jemand anderes — bekommt 22 Tools und keinen Hinweis darauf, dass es Betriebsanweisungen dazu gibt. Die wichtigste davon ist kein Komfort, sondern ein Sicherheitsverhalten: *Plan zeigen, bevor geschrieben wird.*
-
-Deshalb liefert der Server sie zusätzlich selbst aus — über zwei MCP-Primitives:
-
-| Weg | Charakter | Inhalt |
-|---|---|---|
-| **`instructions`** (im `initialize`-Handshake) | **Push** — landet ungefragt im Systemprompt, auch ohne Plugin | Zweck · die harte Schreibgrenze · ein **Zeiger** auf die Runbooks |
-| **`prompts`** (`prompts/list` · `prompts/get`) | **Pull** — auf Abruf | ein Prompt je Runbook, in Claude Code als `/mcp__ipsymcon__<name>` |
+## Betrieb
 
 ```
-/mcp__ipsymcon__ipsymcon         Einstieg: Objektbaum, Skripte, Variablen, Events
-/mcp__ipsymcon__ips-automation   Eine NEUE Automation entwerfen
-/mcp__ipsymcon__ips-cleanup      Rote Logs, tote Instanzen, verwaiste Objekte
-/mcp__ipsymcon__ips-migration    Teilbaum auf eine andere Instanz umziehen
-/mcp__ipsymcon__ips-refactor     Umstrukturieren ohne Verhaltensänderung
+python -m visu_gateway --transport stdio --config config.yaml   # nur lokales Testsystem
+python -m visu_gateway --transport https --config config.yaml   # auf dem Symcon-Rechner
+python -m visu_gateway.token                                    # Token + Hash erzeugen
 ```
 
-**Die Entwurfsregel dahinter ist wichtiger als die Funktion: im Server steht kein Skill-Text.** Die Prompts lesen die `SKILL.md`-Dateien (plus `references/`) zur Laufzeit aus `skills/`. Eine Kopie wäre ein zweiter Stand, der irgendwann vom ersten abweicht — und der Server hätte dann eine Sicherheitsregel behauptet, die im Repo längst anders lautet. **Eine Datei, drei Auslieferungswege** (Skill-Ordner · Plugin · MCP). Ein Test prüft genau das: Datei ändern → Prompt-Ausgabe muss sich mitändern.
-
-Fehlt `skills/` (etwa bei reiner Paketinstallation ohne Repo), meldet der Prompt das **mit Bezugsquelle**, statt leer zurückzukommen.
-
----
-
-## Roadmap
-
-- [x] **Runbooks über die MCP-Schnittstelle** (v0.5) — `instructions` im `initialize`-Handshake (Push: Zweck + Schreibgrenze + Zeiger auf die Runbooks, kommt **auch ohne installiertes Plugin** an) plus ein **Prompt je Runbook** (`/mcp__ipsymcon__<name>`). Kein Skill-Text im Server: die Prompts lesen `SKILL.md` + `references/` zur Laufzeit aus `skills/` — **eine Datei, drei Auslieferungswege** (Skill-Ordner · Plugin · MCP). Am echten Protokoll verifiziert, 10 Tests inkl. „Datei ändern → Prompt-Ausgabe ändert sich mit".
-- [x] **Multi-Instanz-Support** (v0.4) — benannte Verbindungen über `IPS_INSTANCES_FILE` (YAML), optionaler `instance`-Parameter je Tool (über `_Base`), Default-Instanz, **abwärtskompatibel** zum einzelnen `IPS_URL`. TDD + Live-Test (Default + benannte Instanz + unbekannte Instanz). **Treiber: IPS-Migration auf Linux** — aus Alt- und Neu-Instanz lesen, vergleichen, migrieren, verifizieren.
-- [x] **`ips_run_script_capture`** (v0.2) — Skript via `IPS_RunScriptWaitEx` ausführen und die **Ausgabe** zurückgeben (`echo`, nicht `return` — siehe Hinweis oben). Grundlage für agentisches Entwickeln (bauen → ausführen → Ergebnis prüfen → nachbessern). Optionale `$_IPS`-Parameter. Unit-Tests + Live-Test grün.
-- [ ] **`ips_read_log`** — Log-Abruf über das Companion-Modul [SymconMCPBridge](https://github.com/Schimmilab/SymconMCPBridge): ein residenter **MessageSink** mit gefiltertem **Ring-Buffer** (`KL_ERROR`/`KL_WARNING`/…), der die öffentliche Funktion `MCPB_GetLog($id, level, count, filter)` per JSON-RPC bereitstellt. `ips_read_log` ruft dann nur diese Funktion (kein Inline-PHP, kein Logfile-Parsen). Hintergrund: IP-Symcon hat kein direktes „getMessages" (Meldungsfenster = Live-Abo); `IPS_GetLogDir()` gäbe nur die rohe Logdatei.
-- [x] **Companion-Modul [SymconMCPBridge](https://github.com/Schimmilab/SymconMCPBridge)** (MIT, released) — IP-Symcon-seitiges Modul, das Kernel-Log-Meldungen als gefilterten Ring-Buffer über JSON-RPC bereitstellt. Basis für `ips_read_log` und tiefere Bridge-/Helper-Funktionen. Installation via Module Control (Git-Repo).
-- [x] Dedizierte Tools: `ips_create_variable`, `ips_create_event`, `ips_create_category` (v0.2 — TDD + Live-Test). Detail-Config (Trigger/Cyclic/Schedule) via `ips_call`.
-- [ ] **Dry-Run-Modus** + automatisches **Snapshot-Backup** vor Schreibzugriffen
-- [x] **Beobachtungs-/Navigations-Tools** (v0.3, aus dem Community-Vergleich): `ips_get_object_tree` (ganzer Teilbaum), `ips_get_variable_by_path` (Pfad statt ID), `ips_snapshot_variables` + `ips_diff_variables` (Wirkungskontrolle build→run→diff). TDD + Live-Test.
-- [x] **`ips_export_subtree`** — Backup-Hälfte: Teilbaum → reiches JSON (Variable Typ+Profil+Wert, Skript-Content, Event/Instanz/Link-Detail). Deterministisch, read-only. TDD + Live-Test.
-- [x] **`ips_import_subtree`** (v0.4 — TDD + Live-Round-Trip) — Restore-/Migrations-Hälfte: cat/var/script mechanisch anlegen, **alte→neue ID-Map** zurückgeben; Instanzen/Events/Links bewusst `skipped`. Deterministisches Struktur-Primitiv.
-- [x] **Migrations-Skill** [`skills/ips-migration/`](skills/ips-migration/) — agentische Adaption (Greenfield v1): Export → Plan-First (Modul-Check + Referenz-Scan + Flags) → Zwei-Pass (anlegen → Referenzen via ID-Map verdrahten) → Verify. Semantisches Matching auf bestehende Ziel-Objekte + Bewertung/Refactoring = spätere Skills.
-- [x] **Cleanup-Skill** [`skills/ips-cleanup/`](skills/ips-cleanup/) — IPS-Health-Review + Vor-Migrations-Cleanup (*Phase 0*): Error-Scan (Status ≥ 200) → Triage → 3-Vektor-Dependency-Analyse (Kinder/Links/ConnectionID) → Plan-First-Cascade-Delete + sicheres Fixen (Credentials geflaggt) → Verify. Scan-Snippets mitgeliefert, live validiert.
-- [ ] Evaluations (mcp-builder Phase 4)
-- [ ] Gegenstück: Home-Assistant Dev-MCP (zweite Backend-Schicht des Fusionsprojekts)
-
-## Maintainer
-
-Schimmi — https://schimmilab.de
-Issues und Pull Requests willkommen.
+Tests: `pip install -r requirements-dev.txt && pytest`.

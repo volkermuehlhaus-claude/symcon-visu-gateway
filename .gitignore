@@ -13,3 +13,10 @@ instances.yaml
 # Laufzeitzustand, gehört nicht ins Repo
 data/
 docs/superpowers/plans/
+
+# Gateway: nie einchecken
+config.yaml
+*.jsonl
+*.key
+*.crt
+.env
