@@ -92,6 +92,15 @@ class FakeIPS:
             "Configuration": '{"Password": "hunter2"}',  # darf nie ankommen
         }
 
+    def m_VISU_GetSnapshot(self, oid):
+        self._get(oid)
+        return {"gridConfig": getattr(self, "grid", ""), "properties": {"Password": "hunter2"}, "children": [1, 2]}
+
+    def m_VISU_SaveGridConfiguration(self, oid, doc):
+        self._get(oid)
+        self.grid = doc
+        return True
+
     def m_WFC_GetItems(self, oid):
         return [{"ID": "root", "Configuration": '{"title": "Haus", "url": "http://u:p@host/x?token=abc"}'}]
 

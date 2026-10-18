@@ -338,6 +338,82 @@ def build_server(guard: GuardedClient, auth: TokenVerifier | None = None) -> Fas
             except Exception as e:  # noqa: BLE001
                 return _error(e)
 
+    if guard.allow_layout:
+
+        async def _read_grid() -> dict[str, Any]:
+            snap = await guard.call("VISU_GetSnapshot", [guard.visu_instance_id])
+            grid = snap.get("gridConfig") if isinstance(snap, dict) else None
+            return grid if isinstance(grid, dict) else {}
+
+        def _size(value: Any, what: str) -> dict[str, int]:
+            ok = isinstance(value, dict) and set(value) == {"width", "height"}
+            if not ok or not all(isinstance(v, int) and not isinstance(v, bool) and 1 <= v <= 24
+                                 for v in value.values()):
+                raise PolicyError(f"{what}: erwartet {{width, height}} als ganze Zahlen von 1 bis 24.")
+            return {"width": value["width"], "height": value["height"]}
+
+        @mcp.tool(name="visu_get_grid_config", annotations={"title": "Kachel-Layout lesen", **ro})
+        async def visu_get_grid_config() -> str:
+            """Layout (Spalten, Kachelgrößen, Positionen) der konfigurierten Kachelvisu je Profil/Ausrichtung."""
+            try:
+                return _dumps(await _read_grid())
+            except Exception as e:  # noqa: BLE001
+                return _error(e)
+
+        @mcp.tool(name="visu_set_grid_layout", annotations={"title": "Kachelgrößen setzen", **rw})
+        async def visu_set_grid_layout(
+            profile: str = "~Desktop",
+            orientation: str = "landscape",
+            cross_axis: int | None = None,
+            default_width: int | None = None,
+            default_height: int | None = None,
+            custom_dimensions: dict[str, dict[str, int]] | None = None,
+            individual_dimensions: dict[str, dict[str, int]] | None = None,
+        ) -> str:
+            """Kachelgrößen eines Profils (~Desktop, ~Tablet, ~Phone), Ausrichtung (landscape, portrait) ändern.
+            Liest das bestehende Layout, ändert nur die angegebenen Werte und schreibt es zurück (Einstellungen der
+            Benutzer bleiben). `cross_axis` = Spalten (1..24); `default_width/height` = Standardgröße in Zellen;
+            `custom_dimensions` = Größe je Widget-Typ ("WidgetConfigType.instanceContainer": {width, height}, wird
+            mit vorhandenen Einträgen vermischt); `individual_dimensions` = Größe einzelner Objekte (ID als Text,
+            nur Objekte in der Zielkategorie)."""
+            try:
+                if profile not in {"~Desktop", "~Tablet", "~Phone"}:
+                    raise PolicyError("profile: ~Desktop, ~Tablet oder ~Phone.")
+                if orientation not in {"landscape", "portrait"}:
+                    raise PolicyError("orientation: landscape oder portrait.")
+                if cross_axis is not None and not 1 <= cross_axis <= 24:
+                    raise PolicyError("cross_axis: 1 bis 24.")
+                if (default_width is None) != (default_height is None):
+                    raise PolicyError("default_width und default_height nur zusammen.")
+                custom = {k: _size(v, f"custom_dimensions[{k}]") for k, v in (custom_dimensions or {}).items()}
+                if any(not k.startswith("WidgetConfigType.") for k in custom):
+                    raise PolicyError("custom_dimensions: Schlüssel beginnen mit 'WidgetConfigType.'.")
+                individual = {}
+                for k, v in (individual_dimensions or {}).items():
+                    if not k.isdigit() or not await guard.in_scope(int(k), include_root=False):
+                        raise PolicyError(f"individual_dimensions: Objekt {k} liegt nicht in der Zielkategorie.")
+                    individual[k] = _size(v, f"individual_dimensions[{k}]")
+
+                config = await _read_grid()
+                by_orientation = config.get(profile)
+                by_orientation = by_orientation if isinstance(by_orientation, dict) else {}
+                layout = by_orientation.get(orientation)
+                layout = layout if isinstance(layout, dict) else {}
+                if cross_axis is not None:
+                    layout["crossAxis"] = cross_axis
+                if default_width is not None:
+                    layout["defaultDimensions"] = {"width": default_width, "height": default_height}
+                for field, new in (("customDimensions", custom), ("individualDimensions", individual)):
+                    if new:
+                        merged = layout.get(field) if isinstance(layout.get(field), dict) else {}
+                        layout[field] = {**merged, **new}
+                by_orientation[orientation] = layout
+                config[profile] = by_orientation
+                await guard.call("VISU_SaveGridConfiguration", [guard.visu_instance_id, json.dumps(config)])
+                return _dumps({"profile": profile, "orientation": orientation, "layout": layout})
+            except Exception as e:  # noqa: BLE001
+                return _error(e)
+
     @mcp.tool(name="visu_ensure_link", annotations={"title": "Link sicherstellen", **rw})
     async def visu_ensure_link(parent_id: int, name: str, target_id: int) -> str:
         """Link `name` unter `parent_id` auf `target_id` anlegen oder dessen Ziel anpassen (idempotent)."""

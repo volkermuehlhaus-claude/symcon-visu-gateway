@@ -51,6 +51,7 @@ READ_METHODS: frozenset[str] = frozenset({
     "IPS_GetVariableProfile",
     "IPS_GetVariableProfileList",
     "WFC_GetItems",
+    "VISU_GetSnapshot",  # nur mit allow_layout, nur die konfigurierte Instanz, nur gridConfig, siehe _reduce_snapshot
 })
 
 
@@ -62,6 +63,7 @@ class WriteSpec:
     parent_arg: int | None = None  # Index eines Eltern-Parameters; muss in der Zielkategorie (oder sie selbst) liegen
     creates: bool = False  # legt ein Objekt an; die neue ID wird bis zum Verschieben als "frisch" gemerkt
     deletes: bool = False  # darf die Zielkategorie selbst nicht treffen
+    visu_instance: bool = False  # trifft die konfigurierte Kachelvisu-Instanz (nur Layout, nur mit allow_layout)
 
 
 WRITE_SPECS: dict[str, WriteSpec] = {
@@ -79,7 +81,11 @@ WRITE_SPECS: dict[str, WriteSpec] = {
     "IPS_DeleteLink": WriteSpec(object_arg=0, deletes=True),
     "IPS_CreateInstance": WriteSpec(creates=True),
     "IPS_DeleteInstance": WriteSpec(object_arg=0, deletes=True),
+    "VISU_SaveGridConfiguration": WriteSpec(visu_instance=True),
 }
+
+LAYOUT_METHODS = frozenset({"VISU_GetSnapshot", "VISU_SaveGridConfiguration"})
+MAX_GRID_JSON = 200_000
 
 #: Gruppen-Instanzen (Sammelkacheln): nur das Dummy Module, nur wenn ``allow_groups`` gesetzt ist.
 DUMMY_MODULE_ID = "{485D0419-BE97-4548-AA9C-C083EB82E61E}"
@@ -103,11 +109,15 @@ class GuardedClient:
         audit_log: Path | None = None,
         max_string: int = sf.DEFAULT_MAX_STRING,
         allow_groups: bool = False,
+        visu_instance_id: int = 0,
+        allow_layout: bool = False,
     ) -> None:
         self._raw = raw
         self.target = target_category_id
         self.enable_write = enable_write
         self.allow_groups = allow_groups
+        self.visu_instance_id = visu_instance_id
+        self.allow_layout = allow_layout and visu_instance_id > 0
         self._audit_path = audit_log
         self._max = max_string
         self._fresh: set[int] = set()  # selbst angelegt, noch nicht in die Zielkategorie verschoben
@@ -139,8 +149,30 @@ class GuardedClient:
 
     # --- Aufruf ---------------------------------------------------------------
 
+    def _check_layout(self, method: str, params: list[Any]) -> None:
+        """Layout-Aufrufe nur mit allow_layout und nur für die konfigurierte Kachelvisu-Instanz."""
+        if not self.allow_layout:
+            raise PolicyError(f"{method}: Layout-Zugriff ist im Gateway nicht freigegeben (allow_layout: false).")
+        if not params or params[0] != self.visu_instance_id or not _is_id(params[0]):
+            raise PolicyError(
+                f"{method}: nur die konfigurierte Kachelvisu-Instanz {self.visu_instance_id} ist erlaubt.")
+        if method == "VISU_SaveGridConfiguration":
+            doc = params[1] if len(params) == 2 else None
+            if not isinstance(doc, str) or len(doc) > MAX_GRID_JSON:
+                raise PolicyError(f"{method}: erwartet (Instanz-ID, JSON-Text bis {MAX_GRID_JSON} Zeichen).")
+            try:
+                parsed = json.loads(doc)
+            except ValueError:
+                raise PolicyError(f"{method}: das Layout ist kein gültiges JSON.") from None
+            if not isinstance(parsed, dict):
+                raise PolicyError(f"{method}: das Layout muss ein JSON-Objekt sein.")
+        elif len(params) != 1:
+            raise PolicyError(f"{method}: erwartet nur die Instanz-ID.")
+
     async def call(self, method: str, params: list[Any] | None = None) -> Any:
         params = list(params or [])
+        if method in LAYOUT_METHODS:
+            self._check_layout(method, params)
         if method in READ_METHODS:
             return await self._read(method, params)
         spec = WRITE_SPECS.get(method)
@@ -177,11 +209,29 @@ class GuardedClient:
             return sf.clean_value(result, await self._object_name(oid), f"{method}[{oid}]", red, mx)
         if method == "IPS_GetInstance":
             return self._reduce_instance(result)
+        if method == "VISU_GetSnapshot":
+            return sf.clean_recursive(self._reduce_snapshot(result), method, red, mx)
         if method == "IPS_GetVariable" and isinstance(result, dict):
             result = {k: v for k, v in result.items() if k != "VariableValue"}  # Wert nur über GetValue
         if method == "WFC_GetItems" and isinstance(result, list):
             result = [sf.decode_json_fields(i) if isinstance(i, dict) else i for i in result]
         return sf.clean_recursive(result, method, red, mx)
+
+    @staticmethod
+    def _reduce_snapshot(result: Any) -> Any:
+        """Vom Snapshot der Kachelvisu nur die Layout-Konfiguration (gridConfig), nie den Rest."""
+        if isinstance(result, str):
+            try:
+                result = json.loads(result)
+            except ValueError:
+                return {}
+        grid = result.get("gridConfig", "") if isinstance(result, dict) else ""
+        if isinstance(grid, str):  # als Objekt zurückgeben, damit kein Textfilter das JSON kürzt
+            try:
+                grid = json.loads(grid) if grid else {}
+            except ValueError:
+                grid = {}
+        return {"gridConfig": grid if isinstance(grid, dict) else {}}
 
     @staticmethod
     def _reduce_instance(result: Any) -> Any:

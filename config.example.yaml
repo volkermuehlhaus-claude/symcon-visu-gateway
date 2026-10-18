@@ -5,7 +5,9 @@ symcon:
   password: ""
 target_category_id: 0                  # Objekt-ID von "Kachelvisu-Neu" (muss > 0 sein)
 enable_write: false                    # erst nach Freigabe auf true
-allow_groups: false                    # true: Dummy-Instanzen (Sammelkacheln) unterhalb der Zielkategorie anlegen/löschen
+visu_instance_id: 0                    # Objekt-ID der Kachelvisu-Instanz (nur für allow_layout)
+allow_layout: false                    # true: Kachelgrößen/Spalten dieser Instanz lesen und ändern (braucht visu_instance_id)
+allow_groups: false                   # true: Dummy-Instanzen (Sammelkacheln) unterhalb der Zielkategorie anlegen/löschen
 audit_log: gateway-audit.jsonl        # jeder Schreibvorgang wird vorher protokolliert
 server:                                # nur für --transport https
   host: 0.0.0.0

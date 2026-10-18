@@ -113,6 +113,68 @@ async def test_only_dummy_module_can_be_created(world):
     assert not any(m == "IPS_CreateInstance" for m, _ in world.fake.calls)
 
 
+@pytest.fixture
+def layout_mcp(world):
+    return build_server(GuardedClient(world.fake, target_category_id=500, enable_write=True,
+                                      visu_instance_id=140, allow_layout=True))
+
+
+async def test_layout_tools_absent_unless_allowed(mcp, layout_mcp):
+    async with Client(mcp) as c:
+        assert not {t.name for t in await c.list_tools()} & {"visu_get_grid_config", "visu_set_grid_layout"}
+    async with Client(layout_mcp) as c:
+        assert {"visu_get_grid_config", "visu_set_grid_layout"} <= {t.name for t in await c.list_tools()}
+
+
+async def test_grid_config_read_returns_only_the_layout(layout_mcp, world):
+    world.fake.grid = json.dumps({"~Desktop": {"landscape": {"crossAxis": 12}}})
+    text = await call(layout_mcp, "visu_get_grid_config")
+    assert json.loads(text) == {"~Desktop": {"landscape": {"crossAxis": 12}}}
+    assert "hunter2" not in text and "children" not in text
+
+
+async def test_set_grid_layout_merges_and_keeps_user_settings(layout_mcp, world):
+    world.fake.grid = json.dumps({
+        "~Desktop": {"landscape": {"crossAxis": 12, "individualConfig": {"9": {"widget": "x"}},
+                                   "individualDimensions": {"501": {"width": 2, "height": 2}}}},
+        "~Phone": {"portrait": {"crossAxis": 6}},
+    })
+    out = json.loads(await call(layout_mcp, "visu_set_grid_layout", default_width=4, default_height=3,
+                                custom_dimensions={"WidgetConfigType.instanceContainer": {"width": 4, "height": 4}},
+                                individual_dimensions={"502": {"width": 6, "height": 3}}))
+    saved = json.loads(world.fake.grid)
+    land = saved["~Desktop"]["landscape"]
+    assert land["defaultDimensions"] == {"width": 4, "height": 3} and land["crossAxis"] == 12
+    assert land["individualConfig"] == {"9": {"widget": "x"}}  # Benutzereinstellung bleibt
+    assert land["individualDimensions"] == {"501": {"width": 2, "height": 2}, "502": {"width": 6, "height": 3}}
+    assert saved["~Phone"] == {"portrait": {"crossAxis": 6}} and out["layout"] == land
+
+
+@pytest.mark.parametrize("args", [
+    {"profile": "~TV"}, {"orientation": "diagonal"}, {"cross_axis": 25}, {"default_width": 3},
+    {"custom_dimensions": {"instanceContainer": {"width": 4, "height": 4}}},
+    {"custom_dimensions": {"WidgetConfigType.instanceContainer": {"width": 0, "height": 4}}},
+    {"individual_dimensions": {"110": {"width": 4, "height": 4}}},  # außerhalb der Zielkategorie
+])
+async def test_set_grid_layout_rejects_bad_input(layout_mcp, world, args):
+    world.fake.grid = "{}"
+    text = await call(layout_mcp, "visu_set_grid_layout", **args)
+    assert text.startswith("Abgelehnt") and world.fake.grid == "{}"
+
+
+async def test_layout_calls_only_for_the_configured_instance(world):
+    g = GuardedClient(world.fake, target_category_id=500, enable_write=True, visu_instance_id=140, allow_layout=True)
+    with pytest.raises(PolicyError, match="konfigurierte Kachelvisu"):
+        await g.call("VISU_GetSnapshot", [120])
+    with pytest.raises(PolicyError, match="konfigurierte Kachelvisu"):
+        await g.call("VISU_SaveGridConfiguration", [120, "{}"])
+    with pytest.raises(PolicyError, match="JSON-Objekt"):
+        await g.call("VISU_SaveGridConfiguration", [140, "[]"])
+    with pytest.raises(PolicyError, match="allow_layout"):
+        await GuardedClient(world.fake, target_category_id=500, enable_write=True).call("VISU_GetSnapshot", [140])
+    assert not any(m.startswith("VISU_") for m, _ in world.fake.calls)
+
+
 async def test_secret_variable_never_visible_through_tools(mcp):
     for tool, args in [("visu_get_variable", {"variable_id": 111}), ("visu_get_values", {"variable_ids": [111]})]:
         text = await call(mcp, tool, **args)

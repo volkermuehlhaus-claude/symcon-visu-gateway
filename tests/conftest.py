@@ -24,6 +24,7 @@ class World:
         f.values[113] = "http://user:pw@nas/x?apikey=zzz&a=1"
         f.add(120, "Viessmann", INSTANCE, 0)
         f.add(130, "Skript", SCRIPT, 0)
+        f.add(140, "Kachelvisu", INSTANCE, 0)
         f.add(500, "Kachelvisu-Neu", CATEGORY, 0)
         f.add(501, "Büro", CATEGORY, 500)
         f.add(502, "Link Temp", LINK, 501, TargetID=110)

@@ -25,6 +25,8 @@ class GatewayConfig:
     target_category_id: int
     enable_write: bool = False
     allow_groups: bool = False  # Dummy-Instanzen (Sammelkacheln) unterhalb der Zielkategorie anlegen/löschen
+    visu_instance_id: int = 0  # Kachelvisu-Instanz, deren Layout (Kachelgrößen) gelesen/geschrieben werden darf
+    allow_layout: bool = False  # Layout-Werkzeuge freischalten (braucht visu_instance_id)
     audit_log: Path | None = None
     max_string: int = DEFAULT_MAX_STRING
     listen_host: str = "127.0.0.1"
@@ -60,6 +62,13 @@ def load_config(path: str | os.PathLike[str] | None = None) -> GatewayConfig:
     if target <= 0:
         raise ConfigError("target_category_id muss eine echte Objekt-ID sein (nicht 0 = Wurzel).")
 
+    try:
+        visu_id = int(data.get("visu_instance_id") or 0)
+    except (TypeError, ValueError):
+        raise ConfigError("visu_instance_id muss eine ganze Zahl sein.") from None
+    if _as_bool(data.get("allow_layout", False)) and visu_id <= 0:
+        raise ConfigError("allow_layout verlangt visu_instance_id (Objekt-ID der Kachelvisu-Instanz).")
+
     def _path(key: str) -> Path | None:
         v = srv.get(key) if key.startswith("tls_") else data.get(key)
         return Path(v).expanduser() if v else None
@@ -71,6 +80,8 @@ def load_config(path: str | os.PathLike[str] | None = None) -> GatewayConfig:
         target_category_id=target,
         enable_write=_as_bool(data.get("enable_write", False)),
         allow_groups=_as_bool(data.get("allow_groups", False)),
+        visu_instance_id=visu_id,
+        allow_layout=_as_bool(data.get("allow_layout", False)),
         audit_log=_path("audit_log"),
         max_string=int(data.get("max_string", DEFAULT_MAX_STRING)),
         listen_host=str(srv.get("host") or "127.0.0.1"),
