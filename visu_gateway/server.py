@@ -271,7 +271,8 @@ def build_server(guard: GuardedClient, auth: TokenVerifier | None = None) -> Fas
                 return f"Abgelehnt: Ziel-Objekt {target_id} existiert nicht."
             existing = await _find_child(parent_id, name, 6)
             if existing is not None:
-                current = await guard.call("IPS_GetLinkTargetID", [existing])
+                link = await guard.call("IPS_GetLink", [existing])
+                current = link.get("TargetID") if isinstance(link, dict) else None
                 if current != target_id:
                     await guard.call("IPS_SetLinkTargetID", [existing, target_id])
                 return _dumps({"link_id": existing, "created": False, "target_changed": current != target_id})

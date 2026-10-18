@@ -81,8 +81,8 @@ class FakeIPS:
     def m_IPS_GetVariable(self, oid):
         return {"VariableType": 3, "VariableValue": self.values.get(oid), "VariableProfile": ""}
 
-    def m_IPS_GetLinkTargetID(self, oid):
-        return self._get(oid)["TargetID"]
+    def m_IPS_GetLink(self, oid):
+        return {"LinkID": oid, "TargetID": self._get(oid)["TargetID"]}
 
     def m_IPS_GetInstance(self, oid):
         return {

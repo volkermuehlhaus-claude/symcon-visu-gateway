@@ -45,7 +45,6 @@ READ_METHODS: frozenset[str] = frozenset({
     "GetValue",
     "GetValueFormatted",
     "IPS_GetLink",
-    "IPS_GetLinkTargetID",
     "IPS_GetInstance",  # nur Modulinfo, siehe _reduce_instance
     "IPS_GetInstanceListByModuleID",
     "IPS_VariableProfileExists",
