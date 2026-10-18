@@ -212,6 +212,42 @@ def build_server(guard: GuardedClient, auth: TokenVerifier | None = None) -> Fas
         except Exception as e:  # noqa: BLE001
             return _error(e)
 
+    @mcp.tool(name="visu_get_links", annotations={"title": "Links unter einem Objekt auflösen", **ro})
+    async def visu_get_links(parent_id: int) -> str:
+        """Alle direkten Link-Kinder von `parent_id` mit Ziel (ID, Name, Typ, Eltern) und bei Variablen
+        Profil, Typ und formatiertem Wert. Höchstens 200 Links pro Aufruf."""
+        try:
+            out = []
+            for cid in await guard.call("IPS_GetChildrenIDs", [parent_id]) or []:
+                obj = await guard.call("IPS_GetObject", [cid])
+                if not isinstance(obj, dict) or obj.get("ObjectType") != 6:
+                    continue
+                if len(out) >= 200:
+                    return _dumps({"parent_id": parent_id, "links": out, "truncated": "Limit 200 erreicht."})
+                entry: dict[str, Any] = {"link_id": cid, "link_name": obj.get("ObjectName")}
+                try:
+                    target = (await guard.call("IPS_GetLink", [cid]) or {}).get("TargetID")
+                    entry["target_id"] = target
+                    tobj = await guard.call("IPS_GetObject", [target])
+                    tobj = tobj if isinstance(tobj, dict) else {}
+                    entry.update(target_name=tobj.get("ObjectName"), target_type=_kind(tobj),
+                                 target_parent=tobj.get("ParentID"))
+                    if tobj.get("ObjectType") == 2:
+                        meta = await guard.call("IPS_GetVariable", [target])
+                        meta = meta if isinstance(meta, dict) else {}
+                        entry["variable_type"] = VARIABLE_TYPES.get(meta.get("VariableType"), meta.get("VariableType"))
+                        entry["profile"] = meta.get("VariableCustomProfile") or meta.get("VariableProfile")
+                        try:
+                            entry["formatted"] = await guard.call("GetValueFormatted", [target])
+                        except IPSError:
+                            entry["formatted"] = None
+                except IPSError as e:
+                    entry["error"] = e.message
+                out.append(entry)
+            return _dumps({"parent_id": parent_id, "count": len(out), "links": out})
+        except Exception as e:  # noqa: BLE001
+            return _error(e)
+
     @mcp.tool(name="visu_find_by_name", annotations={"title": "Objekt über Namen finden", **ro})
     async def visu_find_by_name(name: str, parent_id: int = 0) -> str:
         """Objekt-ID über den exakten Namen unter einem Eltern-Objekt (IPS_GetObjectIDByName)."""

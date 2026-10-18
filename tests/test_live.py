@@ -6,12 +6,15 @@ einer Variablen "Temperatur" und einer String-Variablen "WLAN Passwort". Nie geg
 
 from __future__ import annotations
 
+import json
 import os
 
 import pytest
+from fastmcp import Client
 
 from visu_gateway.client import IPSClient
 from visu_gateway.guard import GuardedClient, PolicyError
+from visu_gateway.server import build_server
 
 URL = os.environ.get("VISU_LIVE_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="VISU_LIVE_URL nicht gesetzt")
@@ -55,6 +58,20 @@ async def test_instance_info_only(live):
             assert set(info) == {"InstanceID", "InstanceStatus", "ConnectionID", "ModuleInfo"}
             return
     pytest.skip("keine Instanz vorhanden")
+
+
+async def test_get_links_tool_on_real_symcon(live):
+    temp = await live.call("IPS_GetObjectIDByName", ["Temperatur", OLD])
+    link = await live.call("IPS_CreateLink", [])
+    await live.call("IPS_SetParent", [link, TARGET])
+    await live.call("IPS_SetName", [link, "Temperatur"])
+    await live.call("IPS_SetLinkTargetID", [link, temp])
+    async with Client(build_server(live)) as c:
+        res = await c.call_tool("visu_get_links", {"parent_id": TARGET}, raise_on_error=False)
+    out = json.loads(res.content[0].text)
+    entry = next(e for e in out["links"] if e["link_id"] == link)
+    assert entry["target_id"] == temp and entry["target_type"] == "Variable"
+    assert entry["variable_type"] == "Float" and "21" in entry["formatted"]
 
 
 async def test_build_and_scope_on_real_symcon(live):

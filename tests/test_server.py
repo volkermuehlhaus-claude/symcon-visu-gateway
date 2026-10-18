@@ -40,6 +40,13 @@ async def test_read_tools(mcp):
     assert var["value"] == "21,5" and "VariableValue" not in var["metadata"]
 
 
+async def test_get_links_resolves_targets(mcp):
+    out = json.loads(await call(mcp, "visu_get_links", parent_id=501))
+    assert out["count"] == 1
+    link = out["links"][0]
+    assert link["target_id"] == 110 and link["target_name"] == "Temperatur" and link["formatted"] == "21,5"
+
+
 async def test_secret_variable_never_visible_through_tools(mcp):
     for tool, args in [("visu_get_variable", {"variable_id": 111}), ("visu_get_values", {"variable_ids": [111]})]:
         text = await call(mcp, tool, **args)
