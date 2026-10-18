@@ -5,7 +5,8 @@ symcon:
   password: ""
 target_category_id: 0                  # Objekt-ID von "Kachelvisu-Neu" (muss > 0 sein)
 enable_write: false                    # erst nach Freigabe auf true
-audit_log: gateway-audit.jsonl         # jeder Schreibvorgang wird vorher protokolliert
+allow_groups: false                    # true: Dummy-Instanzen (Sammelkacheln) unterhalb der Zielkategorie anlegen/löschen
+audit_log: gateway-audit.jsonl        # jeder Schreibvorgang wird vorher protokolliert
 server:                                # nur für --transport https
   host: 0.0.0.0
   port: 8765

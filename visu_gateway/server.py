@@ -17,7 +17,7 @@ from fastmcp import FastMCP
 from fastmcp.server.auth import AccessToken, TokenVerifier
 
 from .client import IPSConfigError, IPSError
-from .guard import GuardedClient, PolicyError
+from .guard import DUMMY_MODULE_ID, GuardedClient, PolicyError
 
 OBJECT_TYPES = {0: "Category", 1: "Instance", 2: "Variable", 3: "Script", 4: "Event", 5: "Media", 6: "Link"}
 VARIABLE_TYPES = {0: "Boolean", 1: "Integer", 2: "Float", 3: "String"}
@@ -105,10 +105,11 @@ def build_server(guard: GuardedClient, auth: TokenVerifier | None = None) -> Fas
         if not await guard.in_scope(parent_id, include_root=True):
             raise PolicyError(f"Eltern-Objekt {parent_id} liegt außerhalb der Zielkategorie {guard.target}.")
 
-    async def _create_under(creator: str, deleter: str, parent_id: int, name: str) -> int:
+    async def _create_under(creator: str, deleter: str, parent_id: int, name: str,
+                            create_params: list[Any] | None = None) -> int:
         """Anlegen + einhängen + benennen; bei Fehler das frische Objekt wieder entfernen."""
         await _require_scope(parent_id)
-        new_id = await guard.call(creator, [])
+        new_id = await guard.call(creator, create_params or [])
         try:
             await guard.call("IPS_SetParent", [new_id, parent_id])
             await guard.call("IPS_SetName", [new_id, name])
@@ -316,6 +317,27 @@ def build_server(guard: GuardedClient, auth: TokenVerifier | None = None) -> Fas
         except Exception as e:  # noqa: BLE001
             return _error(e)
 
+    if guard.allow_groups:
+
+        @mcp.tool(name="visu_ensure_group", annotations={"title": "Gruppe (Dummy-Instanz) sicherstellen", **rw})
+        async def visu_ensure_group(parent_id: int, name: str) -> str:
+            """Gruppe `name` (Dummy Module) unter `parent_id` anlegen, falls sie fehlt (idempotent). Sie wird in der
+            Kachelvisu zur Sammelkachel; Links darunter wie bei einer Kategorie mit visu_ensure_link anlegen."""
+            try:
+                await _require_scope(parent_id)
+                for cid in await guard.call("IPS_GetChildrenIDs", [parent_id]) or []:
+                    obj = await guard.call("IPS_GetObject", [cid])
+                    if isinstance(obj, dict) and obj.get("ObjectName") == name and obj.get("ObjectType") == 1:
+                        info = await guard.call("IPS_GetInstance", [cid])
+                        module = ((info or {}).get("ModuleInfo") or {}).get("ModuleID")
+                        if str(module).upper() == DUMMY_MODULE_ID:
+                            return _dumps({"group_id": cid, "created": False})
+                new_id = await _create_under("IPS_CreateInstance", "IPS_DeleteInstance", parent_id, name,
+                                             [DUMMY_MODULE_ID])
+                return _dumps({"group_id": new_id, "created": True})
+            except Exception as e:  # noqa: BLE001
+                return _error(e)
+
     @mcp.tool(name="visu_ensure_link", annotations={"title": "Link sicherstellen", **rw})
     async def visu_ensure_link(parent_id: int, name: str, target_id: int) -> str:
         """Link `name` unter `parent_id` auf `target_id` anlegen oder dessen Ziel anpassen (idempotent)."""
@@ -378,7 +400,8 @@ def build_server(guard: GuardedClient, auth: TokenVerifier | None = None) -> Fas
         try:
             obj = await guard.call("IPS_GetObject", [object_id])
             otype = obj.get("ObjectType") if isinstance(obj, dict) else None
-            method = {0: "IPS_DeleteCategory", 6: "IPS_DeleteLink"}.get(otype)
+            method = {0: "IPS_DeleteCategory", 6: "IPS_DeleteLink",
+                      **({1: "IPS_DeleteInstance"} if guard.allow_groups else {})}.get(otype)
             if method is None:
                 return f"Abgelehnt: Objekttyp {OBJECT_TYPES.get(otype, otype)} wird nicht gelöscht."
             await guard.call(method, [object_id])

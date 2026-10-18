@@ -8,7 +8,7 @@ from fake_ips import LINK
 from fastmcp import Client
 
 from visu_gateway.config import ConfigError, load_config
-from visu_gateway.guard import GuardedClient
+from visu_gateway.guard import GuardedClient, PolicyError
 from visu_gateway.server import HashedTokenVerifier, build_server
 
 
@@ -59,6 +59,58 @@ async def test_links_and_children_ordered_like_webfront_with_hidden_and_icon(mcp
     assert links[1]["hidden"] is True and links[2]["position"] == 5
     kids = json.loads(await call(mcp, "visu_list_children", object_id=501))["children"]
     assert [k["name"] for k in kids] == ["Erster", "Versteckt", "Link Temp"]
+
+
+DUMMY = "{485D0419-BE97-4548-AA9C-C083EB82E61E}"
+
+
+@pytest.fixture
+def group_mcp(world):
+    return build_server(GuardedClient(world.fake, target_category_id=500, enable_write=True, allow_groups=True))
+
+
+async def test_group_tool_absent_unless_allowed(mcp, group_mcp):
+    async with Client(mcp) as c:
+        assert "visu_ensure_group" not in {t.name for t in await c.list_tools()}
+    async with Client(group_mcp) as c:
+        assert "visu_ensure_group" in {t.name for t in await c.list_tools()}
+
+
+async def test_ensure_group_creates_dummy_idempotently_with_links(group_mcp, world):
+    first = json.loads(await call(group_mcp, "visu_ensure_group", parent_id=501, name="Licht"))
+    second = json.loads(await call(group_mcp, "visu_ensure_group", parent_id=501, name="Licht"))
+    assert first["created"] is True and second["created"] is False and first["group_id"] == second["group_id"]
+    obj = world.fake.objs[first["group_id"]]
+    assert obj["ObjectType"] == 1 and obj["ModuleID"] == DUMMY and obj["ParentID"] == 501
+    link = json.loads(await call(group_mcp, "visu_ensure_link", parent_id=first["group_id"], name="Temp", target_id=110))
+    assert world.fake.objs[link["link_id"]]["ParentID"] == first["group_id"]
+
+
+async def test_ensure_group_outside_scope_creates_nothing(group_mcp, world):
+    before = len(world.fake.objs)
+    text = await call(group_mcp, "visu_ensure_group", parent_id=101, name="Böse")
+    assert "außerhalb" in text and len(world.fake.objs) == before
+
+
+async def test_group_delete_only_empty_dummy(group_mcp, world):
+    gid = json.loads(await call(group_mcp, "visu_ensure_group", parent_id=501, name="Weg"))["group_id"]
+    json.loads(await call(group_mcp, "visu_ensure_link", parent_id=gid, name="L", target_id=110))
+    assert "nicht leer" in await call(group_mcp, "visu_delete_object", object_id=gid)
+    other = world.fake.add(None, "Fremd", 1, 501, ModuleID="{ABC}")
+    assert "kein Dummy" in await call(group_mcp, "visu_delete_object", object_id=other)
+    assert other in world.fake.objs
+
+
+async def test_group_methods_refused_by_default_guard(guard):
+    with pytest.raises(PolicyError, match="allow_groups"):
+        await guard.call("IPS_CreateInstance", [DUMMY])
+
+
+async def test_only_dummy_module_can_be_created(world):
+    g = GuardedClient(world.fake, target_category_id=500, enable_write=True, allow_groups=True)
+    with pytest.raises(PolicyError, match="Dummy Module"):
+        await g.call("IPS_CreateInstance", ["{00000000-0000-0000-0000-000000000000}"])
+    assert not any(m == "IPS_CreateInstance" for m, _ in world.fake.calls)
 
 
 async def test_secret_variable_never_visible_through_tools(mcp):

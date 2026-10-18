@@ -24,6 +24,7 @@ class GatewayConfig:
     ips_password: str
     target_category_id: int
     enable_write: bool = False
+    allow_groups: bool = False  # Dummy-Instanzen (Sammelkacheln) unterhalb der Zielkategorie anlegen/löschen
     audit_log: Path | None = None
     max_string: int = DEFAULT_MAX_STRING
     listen_host: str = "127.0.0.1"
@@ -69,6 +70,7 @@ def load_config(path: str | os.PathLike[str] | None = None) -> GatewayConfig:
         ips_password=str(ips.get("password") or ""),
         target_category_id=target,
         enable_write=_as_bool(data.get("enable_write", False)),
+        allow_groups=_as_bool(data.get("allow_groups", False)),
         audit_log=_path("audit_log"),
         max_string=int(data.get("max_string", DEFAULT_MAX_STRING)),
         listen_host=str(srv.get("host") or "127.0.0.1"),

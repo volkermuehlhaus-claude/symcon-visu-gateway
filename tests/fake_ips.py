@@ -87,7 +87,8 @@ class FakeIPS:
     def m_IPS_GetInstance(self, oid):
         return {
             "InstanceID": oid, "InstanceStatus": 102, "ConnectionID": 0,
-            "ModuleInfo": {"ModuleID": "{ABC}", "ModuleName": "Viessmann", "ModuleType": 3},
+            "ModuleInfo": {"ModuleID": self._get(oid).get("ModuleID", "{ABC}"), "ModuleName": "Viessmann",
+                           "ModuleType": 3},
             "Configuration": '{"Password": "hunter2"}',  # darf nie ankommen
         }
 
@@ -100,6 +101,15 @@ class FakeIPS:
 
     def m_IPS_CreateLink(self):
         return self.add(None, "Unnamed Object", LINK, parent=0, TargetID=0)
+
+    def m_IPS_CreateInstance(self, module_id):
+        return self.add(None, "Unnamed Object", INSTANCE, parent=0, ModuleID=module_id)
+
+    def m_IPS_DeleteInstance(self, oid):
+        if self.children(oid):
+            raise IPSError(-32000, "Instance not empty")
+        del self.objs[oid]
+        return True
 
     def m_IPS_SetParent(self, oid, parent):
         self._get(oid)["ParentID"] = parent

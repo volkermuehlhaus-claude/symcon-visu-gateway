@@ -20,7 +20,8 @@ LOOPBACK = {"127.0.0.1", "::1", "localhost"}
 
 def build_guard(cfg: GatewayConfig) -> GuardedClient:
     raw = IPSClient(url=cfg.ips_url, user=cfg.ips_user, password=cfg.ips_password)
-    return GuardedClient(raw, cfg.target_category_id, cfg.enable_write, cfg.audit_log, cfg.max_string)
+    return GuardedClient(raw, cfg.target_category_id, cfg.enable_write, cfg.audit_log, cfg.max_string,
+                         cfg.allow_groups)
 
 
 def main(argv: list[str] | None = None) -> int:

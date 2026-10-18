@@ -77,11 +77,17 @@ WRITE_SPECS: dict[str, WriteSpec] = {
     "IPS_SetLinkTargetID": WriteSpec(object_arg=0),
     "IPS_DeleteCategory": WriteSpec(object_arg=0, deletes=True),
     "IPS_DeleteLink": WriteSpec(object_arg=0, deletes=True),
+    "IPS_CreateInstance": WriteSpec(creates=True),
+    "IPS_DeleteInstance": WriteSpec(object_arg=0, deletes=True),
 }
 
+#: Gruppen-Instanzen (Sammelkacheln): nur das Dummy Module, nur wenn ``allow_groups`` gesetzt ist.
+DUMMY_MODULE_ID = "{485D0419-BE97-4548-AA9C-C083EB82E61E}"
+GROUP_METHODS = frozenset({"IPS_CreateInstance", "IPS_DeleteInstance"})
+
 # Nur Objekttypen, die das Gateway selbst anlegt, dürfen als "frisch" gelten.
-_OBJ_CATEGORY, _OBJ_LINK = 0, 6
-_DELETE_TYPE = {"IPS_DeleteCategory": _OBJ_CATEGORY, "IPS_DeleteLink": _OBJ_LINK}
+_OBJ_CATEGORY, _OBJ_INSTANCE, _OBJ_LINK = 0, 1, 6
+_DELETE_TYPE = {"IPS_DeleteCategory": _OBJ_CATEGORY, "IPS_DeleteLink": _OBJ_LINK, "IPS_DeleteInstance": _OBJ_INSTANCE}
 
 
 def _is_id(v: Any) -> bool:
@@ -96,10 +102,12 @@ class GuardedClient:
         enable_write: bool = False,
         audit_log: Path | None = None,
         max_string: int = sf.DEFAULT_MAX_STRING,
+        allow_groups: bool = False,
     ) -> None:
         self._raw = raw
         self.target = target_category_id
         self.enable_write = enable_write
+        self.allow_groups = allow_groups
         self._audit_path = audit_log
         self._max = max_string
         self._fresh: set[int] = set()  # selbst angelegt, noch nicht in die Zielkategorie verschoben
@@ -194,6 +202,11 @@ class GuardedClient:
         if not self.enable_write:
             raise PolicyError("Schreiben ist im Gateway nicht freigegeben (enable_write: false).")
 
+        if method in GROUP_METHODS and not self.allow_groups:
+            raise PolicyError(f"{method}: Gruppen-Instanzen sind im Gateway nicht freigegeben (allow_groups: false).")
+        if method == "IPS_CreateInstance" and params != [DUMMY_MODULE_ID]:
+            raise PolicyError(f"IPS_CreateInstance: nur das Dummy Module {DUMMY_MODULE_ID} darf angelegt werden.")
+
         if spec.object_arg is not None:
             oid = params[spec.object_arg] if len(params) > spec.object_arg else None
             if not await self._allowed_object(oid):
@@ -204,6 +217,13 @@ class GuardedClient:
                 obj = await self._raw.call("IPS_GetObject", [oid])
                 if not isinstance(obj, dict) or obj.get("ObjectType") != _DELETE_TYPE[method]:
                     raise PolicyError(f"{method}: Objekt {oid} hat nicht den passenden Typ.")
+                if method == "IPS_DeleteInstance":
+                    inst = await self._raw.call("IPS_GetInstance", [oid])
+                    module = (inst.get("ModuleInfo") or {}).get("ModuleID") if isinstance(inst, dict) else None
+                    if str(module).upper() != DUMMY_MODULE_ID:
+                        raise PolicyError(f"IPS_DeleteInstance: Instanz {oid} ist kein Dummy Module.")
+                    if obj.get("ChildrenIDs"):
+                        raise PolicyError(f"IPS_DeleteInstance: Instanz {oid} ist nicht leer.")
             if method == "IPS_SetParent" and oid == self.target:
                 raise PolicyError("Die Zielkategorie selbst wird nicht verschoben.")
 
