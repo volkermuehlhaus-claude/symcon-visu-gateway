@@ -150,6 +150,17 @@ async def test_set_grid_layout_merges_and_keeps_user_settings(layout_mcp, world)
     assert saved["~Phone"] == {"portrait": {"crossAxis": 6}} and out["layout"] == land
 
 
+async def test_set_grid_layout_clear_positions_keeps_the_rest(layout_mcp, world):
+    world.fake.grid = json.dumps({"~Desktop": {"landscape": {
+        "crossAxis": 12, "individualPositions": {"501": {"502": {"left": 4, "top": 2}}},
+        "individualDimensions": {"502": {"width": 4, "height": 2}}, "individualConfig": {"9": {"w": 1}}}}})
+    await call(layout_mcp, "visu_set_grid_layout", clear_positions=True,
+               individual_dimensions={"502": {"width": 3, "height": 3}})
+    land = json.loads(world.fake.grid)["~Desktop"]["landscape"]
+    assert land["individualPositions"] == {} and land["individualDimensions"] == {"502": {"width": 3, "height": 3}}
+    assert land["crossAxis"] == 12 and land["individualConfig"] == {"9": {"w": 1}}
+
+
 @pytest.mark.parametrize("args", [
     {"profile": "~TV"}, {"orientation": "diagonal"}, {"cross_axis": 25}, {"default_width": 3},
     {"custom_dimensions": {"instanceContainer": {"width": 4, "height": 4}}},

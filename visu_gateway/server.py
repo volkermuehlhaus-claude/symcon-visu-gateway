@@ -369,13 +369,15 @@ def build_server(guard: GuardedClient, auth: TokenVerifier | None = None) -> Fas
             default_height: int | None = None,
             custom_dimensions: dict[str, dict[str, int]] | None = None,
             individual_dimensions: dict[str, dict[str, int]] | None = None,
+            clear_positions: bool = False,
         ) -> str:
             """Kachelgrößen eines Profils (~Desktop, ~Tablet, ~Phone), Ausrichtung (landscape, portrait) ändern.
             Liest das bestehende Layout, ändert nur die angegebenen Werte und schreibt es zurück (Einstellungen der
             Benutzer bleiben). `cross_axis` = Spalten (1..24); `default_width/height` = Standardgröße in Zellen;
             `custom_dimensions` = Größe je Widget-Typ ("WidgetConfigType.instanceContainer": {width, height}, wird
             mit vorhandenen Einträgen vermischt); `individual_dimensions` = Größe einzelner Objekte (ID als Text,
-            nur Objekte in der Zielkategorie)."""
+            nur Objekte in der Zielkategorie). `clear_positions` löscht alle festen Kachelpositionen dieses
+            Profils/dieser Ausrichtung; die Kacheln ordnen sich dann automatisch nach Position an."""
             try:
                 if profile not in {"~Desktop", "~Tablet", "~Phone"}:
                     raise PolicyError("profile: ~Desktop, ~Tablet oder ~Phone.")
@@ -407,6 +409,8 @@ def build_server(guard: GuardedClient, auth: TokenVerifier | None = None) -> Fas
                     if new:
                         merged = layout.get(field) if isinstance(layout.get(field), dict) else {}
                         layout[field] = {**merged, **new}
+                if clear_positions:
+                    layout["individualPositions"] = {}
                 by_orientation[orientation] = layout
                 config[profile] = by_orientation
                 await guard.call("VISU_SaveGridConfiguration", [guard.visu_instance_id, json.dumps(config)])
