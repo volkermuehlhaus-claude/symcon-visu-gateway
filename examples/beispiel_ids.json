@@ -1,0 +1,15 @@
+{
+ "environment": "Beispiel – IDs durch die eigenen ersetzen",
+ "root": 12345,
+ "variables": {
+  "spot_sofa": 10001,
+  "wandleuchte": 10002,
+  "spot_sofa_dimmen": 10003,
+  "ist_temperatur": 10004,
+  "sollwert": 10005,
+  "co2": 10006,
+  "diagramm_temperatur": 10007,
+  "ww_soll": 10008,
+  "ww_ist": 10009
+ }
+}

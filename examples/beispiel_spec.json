@@ -1,0 +1,86 @@
+{
+ "description": "Beispiel: eine Seite Räume mit einem Raum (zwei Gewerk-Gruppen und eine Diagramm-Kachel) und eine Seite Heizung mit einer Gruppe direkt auf der Seite. Ziele sind Schlüssel aus beispiel_ids.json oder direkt Objekt-IDs.",
+ "pages": [
+  {
+   "name": "Räume",
+   "categories": [
+    {
+     "name": "Wohnen",
+     "groups": [
+      {
+       "name": "Licht Wohnzimmer",
+       "links": [
+        {"name": "Spot Sofa", "target": "spot_sofa", "icon": "lightbulb"},
+        {"name": "Wandleuchte", "target": "wandleuchte", "icon": "lightbulb"},
+        {"name": "Sofa", "target": "spot_sofa_dimmen", "icon": "sliders"}
+       ]
+      },
+      {
+       "name": "Klima",
+       "links": [
+        {"name": "Ist-Temperatur", "target": "ist_temperatur", "icon": "temperature-half"},
+        {"name": "Sollwert", "target": "sollwert", "icon": "temperature-arrow-up"},
+        {"name": "CO2", "target": "co2", "icon": "cloud"}
+       ]
+      }
+     ],
+     "tiles": [
+      {"name": "Diagramm Temperatur", "target": "diagramm_temperatur"}
+     ]
+    }
+   ]
+  },
+  {
+   "name": "Heizung",
+   "groups": [
+    {
+     "name": "Warmwasser",
+     "links": [
+      {"name": "Solltemperatur", "target": "ww_soll", "icon": "temperature-arrow-up"},
+      {"name": "Speichertemperatur", "target": "ww_ist", "icon": "droplet"}
+     ]
+    }
+   ]
+  }
+ ],
+ "layouts": [
+  {
+   "label": "PC-Browser Querformat, 3 Kacheln pro Zeile",
+   "profile": "~Desktop",
+   "orientation": "landscape",
+   "cross_axis": 24,
+   "width": 8,
+   "cell_px": 55,
+   "clear_positions": true,
+   "custom": {"WidgetConfigType.mediaChart": {"width": 12, "height": 8}}
+  },
+  {
+   "label": "PC-Fenster Hochformat, 1 Kachel pro Zeile",
+   "profile": "~Desktop",
+   "orientation": "portrait",
+   "cross_axis": 12,
+   "width": 12,
+   "cell_px": 56,
+   "clear_positions": true,
+   "custom": {"WidgetConfigType.mediaChart": {"width": 12, "height": 6}}
+  },
+  {
+   "label": "Tablet (Symcon-App) Hochformat, 2 Kacheln pro Zeile",
+   "profile": "~Tablet",
+   "orientation": "portrait",
+   "cross_axis": 6,
+   "width": 3,
+   "cell_px": 130,
+   "custom": {"WidgetConfigType.mediaChart": {"width": 6, "height": 3}}
+  },
+  {
+   "label": "Smartphone (Symcon-App) Hochformat, 1 Kachel pro Zeile",
+   "profile": "~Phone",
+   "orientation": "portrait",
+   "cross_axis": 6,
+   "width": 6,
+   "cell_px": 61,
+   "custom": {"WidgetConfigType.mediaChart": {"width": 6, "height": 5}}
+  }
+ ]
+}

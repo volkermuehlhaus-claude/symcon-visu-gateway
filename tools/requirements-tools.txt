@@ -1,0 +1,2 @@
+# Nur für tools/screenshot_visu.py (Screenshots der Kachelvisu im Testsystem)
+playwright==1.64.0

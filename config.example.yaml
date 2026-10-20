@@ -1,7 +1,7 @@
 # Beispielkonfiguration des Gateways. Echte Datei NICHT einchecken und für das Konto von Claude Code unlesbar ablegen.
 symcon:
   url: http://127.0.0.1:3777/api/      # JSON-RPC von IP-Symcon (auf dem Symcon-Rechner: nur localhost)
-  user: gateway                        # eigener Symcon-Benutzer nur für das Gateway
+  user: lizenz@example.com             # Lizenz-E-Mail; Passwort = Fernzugriffs-Passwort von Symcon
   password: ""
 target_category_id: 0                  # Objekt-ID von "Kachelvisu-Neu" (muss > 0 sein)
 enable_write: false                    # erst nach Freigabe auf true

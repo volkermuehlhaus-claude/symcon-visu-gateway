@@ -4,6 +4,10 @@ Abgesichertes MCP-Gateway zu IP-Symcon, um per Claude Code eine Kachelvisualisie
 Fork von [Schimmilab/ipsymcon-mcp-server](https://github.com/Schimmilab/ipsymcon-mcp-server) (MIT), stark reduziert:
 `client.py` stammt vom Upstream, alles andere ist neu. Lizenz und Urheberhinweis siehe `LICENSE`.
 
+**Anleitung:** [Sanfte Migration vom WebFront zur Kachelvisu mit einem KI-Agenten](docs/sanfte-migration.md):
+Vorgehen Schritt für Schritt, Sicherheitskonzept, Testsystem, Werkzeuge in `tools/`, Beispiele in `examples/`,
+Designdateien in `designs/`.
+
 ## Unterschiede zum Upstream
 
 | Upstream | Dieses Gateway |
