@@ -119,11 +119,69 @@ def layout_mcp(world):
                                       visu_instance_id=140, allow_layout=True))
 
 
+LAYOUT_TOOLS = {"visu_get_grid_config", "visu_set_grid_layout", "visu_copy_tile_config", "visu_clear_tile_config"}
+
+
 async def test_layout_tools_absent_unless_allowed(mcp, layout_mcp):
     async with Client(mcp) as c:
-        assert not {t.name for t in await c.list_tools()} & {"visu_get_grid_config", "visu_set_grid_layout"}
+        assert not {t.name for t in await c.list_tools()} & LAYOUT_TOOLS
     async with Client(layout_mcp) as c:
-        assert {"visu_get_grid_config", "visu_set_grid_layout"} <= {t.name for t in await c.list_tools()}
+        assert LAYOUT_TOOLS <= {t.name for t in await c.list_tools()}
+
+
+PLAYER = {"type": "WidgetConfigType.mediaPlayer", "active": [], "parameters": "{\"playback\":110}"}
+
+
+async def test_copy_tile_config_to_all_other_profiles_keeps_the_rest(layout_mcp, world):
+    world.fake.grid = json.dumps({
+        "~Desktop": {"landscape": {"crossAxis": 24, "individualConfig": {"502": PLAYER}},
+                     "portrait": {"individualConfig": {"501": {"type": "x"}},
+                                  "individualDimensions": {"502": {"width": 6, "height": 3}}}},
+    })
+    out = json.loads(await call(layout_mcp, "visu_copy_tile_config", object_id=502))
+    saved = json.loads(world.fake.grid)
+    assert len(out["copied_to"]) == 5 and out["config"] == PLAYER
+    for profile in ("~Desktop", "~Tablet", "~Phone"):
+        for orientation in ("landscape", "portrait"):
+            assert saved[profile][orientation]["individualConfig"]["502"] == PLAYER
+    port = saved["~Desktop"]["portrait"]
+    assert port["individualConfig"]["501"] == {"type": "x"}  # andere Kacheln bleiben
+    assert port["individualDimensions"] == {"502": {"width": 6, "height": 3}}
+    assert saved["~Desktop"]["landscape"]["crossAxis"] == 24
+
+
+async def test_copy_tile_config_only_to_given_targets(layout_mcp, world):
+    world.fake.grid = json.dumps({"~Desktop": {"landscape": {"individualConfig": {"502": PLAYER}}}})
+    await call(layout_mcp, "visu_copy_tile_config", object_id=502, targets=["~Phone/portrait"])
+    saved = json.loads(world.fake.grid)
+    assert saved["~Phone"]["portrait"]["individualConfig"] == {"502": PLAYER} and "~Tablet" not in saved
+
+
+@pytest.mark.parametrize("args", [
+    {"object_id": 110},  # außerhalb der Zielkategorie
+    {"object_id": 501},  # in der Quelle keine Darstellung
+    {"object_id": 502, "source": "~TV/landscape"},
+    {"object_id": 502, "targets": ["~Desktop/diagonal"]},
+])
+async def test_copy_tile_config_rejects_bad_input(layout_mcp, world, args):
+    world.fake.grid = before = json.dumps({"~Desktop": {"landscape": {"individualConfig": {"502": PLAYER}}}})
+    text = await call(layout_mcp, "visu_copy_tile_config", **args)
+    assert text.startswith("Abgelehnt") and world.fake.grid == before
+
+
+async def test_clear_tile_config(layout_mcp, world):
+    world.fake.grid = json.dumps({
+        "~Desktop": {"landscape": {"individualConfig": {"502": PLAYER, "501": {"type": "x"}}}},
+        "~Phone": {"portrait": {"individualConfig": {"502": PLAYER}}},
+    })
+    out = json.loads(await call(layout_mcp, "visu_clear_tile_config", object_id=502, targets=["~Phone/portrait"]))
+    saved = json.loads(world.fake.grid)
+    assert out["cleared"] == ["~Phone/portrait"] and saved["~Phone"]["portrait"]["individualConfig"] == {}
+    assert "502" in saved["~Desktop"]["landscape"]["individualConfig"]
+    out = json.loads(await call(layout_mcp, "visu_clear_tile_config", object_id=502))
+    assert out["cleared"] == ["~Desktop/landscape"]
+    assert json.loads(world.fake.grid)["~Desktop"]["landscape"]["individualConfig"] == {"501": {"type": "x"}}
+    assert (await call(layout_mcp, "visu_clear_tile_config", object_id=110)).startswith("Abgelehnt")
 
 
 async def test_grid_config_read_returns_only_the_layout(layout_mcp, world):

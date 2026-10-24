@@ -418,6 +418,75 @@ def build_server(guard: GuardedClient, auth: TokenVerifier | None = None) -> Fas
             except Exception as e:  # noqa: BLE001
                 return _error(e)
 
+        slots = [(p, o) for p in ("~Desktop", "~Tablet", "~Phone") for o in ("landscape", "portrait")]
+
+        def _slot(spec: str) -> tuple[str, str]:
+            profile, _, orientation = spec.partition("/")
+            if (profile, orientation) not in slots:
+                raise PolicyError(f"'{spec}': erwartet Profil/Ausrichtung, z. B. '~Tablet/portrait'.")
+            return profile, orientation
+
+        def _layout(config: dict[str, Any], profile: str, orientation: str) -> dict[str, Any]:
+            """Layout eines Profils/einer Ausrichtung; fehlende Ebenen werden angelegt."""
+            by_orientation = config.get(profile) if isinstance(config.get(profile), dict) else {}
+            layout = by_orientation.get(orientation) if isinstance(by_orientation.get(orientation), dict) else {}
+            by_orientation[orientation] = layout
+            config[profile] = by_orientation
+            return layout
+
+        async def _require_tile(object_id: int) -> None:
+            if not await guard.in_scope(object_id, include_root=False):
+                raise PolicyError(f"Objekt {object_id} liegt nicht in der Zielkategorie.")
+
+        @mcp.tool(name="visu_copy_tile_config", annotations={"title": "Kachel-Darstellung übernehmen", **rw})
+        async def visu_copy_tile_config(
+            object_id: int, source: str = "~Desktop/landscape", targets: list[str] | None = None
+        ) -> str:
+            """Darstellung einer Kachel (z. B. Media-Player statt Liste), die im Bearbeitungsmodus der Visu für ein
+            Profil gewählt wurde, in andere Profile/Ausrichtungen übernehmen. `source` und `targets` als
+            "~Desktop/landscape", "~Tablet/portrait" …; ohne `targets` in alle anderen fünf. Nur Objekte in der
+            Zielkategorie; übernommen wird nur, was in der Quelle schon steht."""
+            try:
+                await _require_tile(object_id)
+                src = _slot(source)
+                dests = [_slot(t) for t in targets] if targets else [s for s in slots if s != src]
+                config = await _read_grid()
+                found = _layout(config, *src).get("individualConfig")
+                entry = found.get(str(object_id)) if isinstance(found, dict) else None
+                if not isinstance(entry, dict):
+                    raise PolicyError(f"In {source} ist für Objekt {object_id} keine Kachel-Darstellung gesetzt.")
+                for profile, orientation in dests:
+                    layout = _layout(config, profile, orientation)
+                    current = layout.get("individualConfig") if isinstance(layout.get("individualConfig"), dict) else {}
+                    layout["individualConfig"] = {**current, str(object_id): entry}
+                await guard.call("VISU_SaveGridConfiguration", [guard.visu_instance_id, json.dumps(config)])
+                return _dumps({"object_id": object_id, "source": source, "config": entry,
+                               "copied_to": [f"{p}/{o}" for p, o in dests]})
+            except Exception as e:  # noqa: BLE001
+                return _error(e)
+
+        @mcp.tool(name="visu_clear_tile_config", annotations={"title": "Kachel-Darstellung zurücksetzen", **rw})
+        async def visu_clear_tile_config(object_id: int, targets: list[str] | None = None) -> str:
+            """Eigene Darstellung einer Kachel entfernen (zurück zur Standard-Darstellung der Visu, bei „Kacheln
+            (Liste)“ also Liste). `targets` wie bei visu_copy_tile_config; ohne `targets` in allen Profilen."""
+            try:
+                await _require_tile(object_id)
+                dests = [_slot(t) for t in targets] if targets else slots
+                config = await _read_grid()
+                cleared = []
+                for profile, orientation in dests:
+                    by_orientation = config.get(profile)
+                    layout = by_orientation.get(orientation) if isinstance(by_orientation, dict) else None
+                    tiles = layout.get("individualConfig") if isinstance(layout, dict) else None
+                    if isinstance(tiles, dict) and str(object_id) in tiles:
+                        del tiles[str(object_id)]
+                        cleared.append(f"{profile}/{orientation}")
+                if cleared:
+                    await guard.call("VISU_SaveGridConfiguration", [guard.visu_instance_id, json.dumps(config)])
+                return _dumps({"object_id": object_id, "cleared": cleared})
+            except Exception as e:  # noqa: BLE001
+                return _error(e)
+
     @mcp.tool(name="visu_ensure_link", annotations={"title": "Link sicherstellen", **rw})
     async def visu_ensure_link(parent_id: int, name: str, target_id: int) -> str:
         """Link `name` unter `parent_id` auf `target_id` anlegen oder dessen Ziel anpassen (idempotent)."""

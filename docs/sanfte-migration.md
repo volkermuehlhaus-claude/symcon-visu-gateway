@@ -570,6 +570,10 @@ Einiges kann oder soll das Gateway bewusst nicht. Das bleibt bei dir:
   Listen wieder her.
 - **Design ist pro Browser gespeichert**, wenn man es im Designeditor ändert. Für alle Geräte: in der Instanz
   „Eigenes Design bereitstellen“ und die Datei hochladen.
+- **„Kacheln (Liste)“ gilt auch für Geräte-Instanzen.** Verlinkt man z. B. eine Sonos-Instanz direkt, zeigt die
+  Kachelvisu wieder nur eine Liste statt der Media-Player-Kachel. Abhilfe: im Bearbeitungsmodus an dieser einen Kachel
+  die Darstellung umstellen. Die Visu speichert das im Layout (`individualConfig`) aber nur für das gerade benutzte
+  Profil; `visu_copy_tile_config` überträgt es in die übrigen Profile (Browser hoch, Tablet, Handy).
 - **Browser = `~Desktop`.** Wer auf dem iPad im Browser arbeitet, bekommt das Desktop-Layout im Hochformat.
 - **Testsystem ersetzt keine Live-Prüfung.** Funktionsnamen der Symcon-API sollte der Agent im Testsystem
   ausprobieren, statt sie zu raten. Beispiel: `IPS_GetLinkTargetID` gibt es in 9.0 nicht, das Ziel eines Links steht in
@@ -619,6 +623,7 @@ weitermachen, wo ihr aufgehört habt.
 | `visu_update_object` | Name, Position, Icon, ausblenden | ja, nur in der Zielkategorie |
 | `visu_move_object`, `visu_delete_object` | verschieben, löschen | ja, nur in der Zielkategorie |
 | `visu_get_grid_config`, `visu_set_grid_layout` | Kachelgrößen lesen/setzen (nur mit `allow_layout`) | ja, nur die eine Instanz |
+| `visu_copy_tile_config`, `visu_clear_tile_config` | Darstellung einer Kachel (z. B. Media-Player statt Liste) in andere Profile übernehmen bzw. zurücksetzen (nur mit `allow_layout`) | ja, nur die eine Instanz |
 
 ### Hilfsprogramme in `tools/`
 
