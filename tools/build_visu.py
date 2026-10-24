@@ -52,8 +52,10 @@ def group_cells(rows: int, cell_px: int) -> int:
 
 
 def layout_plan(spec: dict[str, Any]) -> list[dict[str, Any]]:
-    """Je Profil/Ausrichtung: Spalten, Standardgröße und Größe jeder Gruppe (Name -> Breite/Höhe in Zellen)."""
+    """Je Profil/Ausrichtung: Spalten, Standardgröße und Größe jeder Gruppe und jeder Kachel mit ``rows``
+    (Pfad -> Breite/Höhe in Zellen). Popup-Kacheln zeigen ihre Kinder als Liste, daher wie Gruppen."""
     groups = {path: len(node["links"]) for level, path, node in walk(spec) if level == "group"}
+    groups |= {path: node["rows"] for level, path, node in walk(spec) if level == "tile" and node.get("rows")}
     plans = []
     for lay in spec.get("layouts", []):
         sizes = {
@@ -105,7 +107,7 @@ def print_plan(spec: dict[str, Any], ids: dict[str, int], root: int) -> int:
             if target is None:
                 missing.append(node["target"])
             icon = f"  [{node['icon']}]" if node.get("icon") else ""
-            mark = " (Kachel)" if level == "tile" else ""
+            mark = (f" (Kachel, {node['rows']} Zeilen)" if node.get("rows") else " (Kachel)") if level == "tile" else ""
             print(f"{indent}- {node['position']}: {node['name']}{mark}  -> {node['target']} ({target}){icon}")
         else:
             tag = {"page": "Seite", "category": "Kategorie", "group": "Gruppe"}[level]
@@ -157,7 +159,11 @@ async def apply_layout(
             clear_positions=bool(plan.get("clear_positions")),
             custom_dimensions=plan.get("custom") or None,
         )
-        print(f"Layout {plan['label']}: {len(sizes)} Gruppen gesetzt", "ok" if "layout" in res else res, flush=True)
+        print(
+            f"Layout {plan['label']}: {len(sizes)} Gruppen/Kacheln gesetzt",
+            "ok" if "layout" in res else res,
+            flush=True,
+        )
 
 
 async def execute(

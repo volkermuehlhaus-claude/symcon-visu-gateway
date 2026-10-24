@@ -382,7 +382,8 @@ Die Abbildung in der neuen Visu:
 | Link auf Variable | Link → Zeile in der Sammelkachel |
 | Link auf Instanz (z. B. Rollladen) | Dummy-Gruppe mit dem Instanznamen und Links auf deren sichtbare Variablen |
 | lose Links direkt im Raum | Sammelgruppe mit dem Raumnamen |
-| Diagramm, Popup, Ereignis, Skript | eigene Kachel direkt in der Kategorie |
+| Popup-Instanz | eigene Kachel, zeigt die Kinder des Popups als Liste (wie eine Sammelkachel) |
+| Diagramm, Ereignis, Skript | eigene Kachel direkt in der Kategorie |
 
 ## Schritt 7 – Darstellung, Design und Icons
 
@@ -531,6 +532,8 @@ Was du dazu wissen musst:
   `clear_positions` löscht sie, damit die Kacheln wieder automatisch fließen.
 
 Die Layouts stehen im Block `layouts` der Spec. Die Höhe jeder Gruppe rechnet `build_visu.py` aus der Zeilenzahl aus.
+Das gilt auch für **Popups**: Die Kachelvisu zeigt sie nicht als Knopf, sondern als Liste ihrer Kinder. Mit der
+Standardhöhe wären sie abgeschnitten. `inventory_to_spec.py` trägt darum bei Popup-Kacheln die Zeilenzahl (`rows`) ein.
 Nur die Größen neu setzen, ohne Links anzufassen:
 
 ```bash
@@ -640,7 +643,8 @@ pages[]                      Seiten = Reiter oben (Kategorien unter der Zielkate
     groups[]                 Sammelkacheln (Dummy-Instanzen)
       name, position?
       links[]                Zeilen: name, target, icon?, position?
-    tiles[]                  eigene Kacheln (Diagramm, Popup, Ereignis): name, target, icon?
+    tiles[]                  eigene Kacheln (Diagramm, Popup, Ereignis): name, target, icon?,
+                             rows? (Zeilenzahl, nur Popups: Höhe wie bei einer Gruppe)
   groups[], tiles[]          wie oben, aber direkt auf der Seite
 layouts[]                    Kachelgrößen je Profil (optional)
   label, profile (~Desktop|~Tablet|~Phone), orientation (landscape|portrait),

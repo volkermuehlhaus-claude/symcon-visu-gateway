@@ -86,6 +86,11 @@ async def children(client: Any, oid: int) -> list[dict[str, Any]]:
     return (await call(client, "visu_list_children", object_id=oid))["children"]
 
 
+async def popup_rows(client: Any, instance_id: int) -> int:
+    """Zeilen einer Popup-Kachel: Die Kachelvisu zeigt die sichtbaren Kinder der Popup-Instanz als Liste."""
+    return sum(1 for k in await children(client, instance_id) if not k.get("hidden"))
+
+
 async def links_of(client: Any, oid: int) -> dict[int, dict[str, Any]]:
     res = await call(client, "visu_get_links", parent_id=oid)
     return {lk["link_id"]: lk for lk in res.get("links", [])}
@@ -145,10 +150,12 @@ async def crawl_room(client: Any, room_id: int, room_name: str) -> dict[str, Any
     used_group_names: set[str] = set()
     used_tile_names: set[str] = set()
 
-    def add_tile(name: str, target: int, icon: str | None = None) -> None:
+    def add_tile(name: str, target: int, icon: str | None = None, rows: int | None = None) -> None:
         tile = {"name": unique(name.strip(), used_tile_names, None), "target": target}
         if icon:
             tile["icon"] = icon
+        if rows:
+            tile["rows"] = rows  # Höhe der Kachel wie bei einer Gruppe (build_visu.py, Layout)
         tiles.append(tile)
 
     for k in kids:
@@ -166,13 +173,14 @@ async def crawl_room(client: Any, room_id: int, room_name: str) -> dict[str, Any
                 elif not sub_tiles:
                     report.append(f"  leere Gruppe ausgelassen: {room_name} / {k['name']}")
             else:
-                add_tile(k["name"], k["id"], k.get("icon"))
+                rows = await popup_rows(client, k["id"]) if module == POPUP else None
+                add_tile(k["name"], k["id"], k.get("icon"), rows)
         elif k["type"] == "Link" and k["id"] in links:
             lk = links[k["id"]]
             name = clean_name(lk.get("link_name"), lk.get("target_name"))
             if lk.get("target_type") == "Instance":
                 if await module_id(client, lk["target_id"]) == POPUP:
-                    add_tile(name, lk["target_id"], k.get("icon"))
+                    add_tile(name, lk["target_id"], k.get("icon"), await popup_rows(client, lk["target_id"]))
                     continue
                 items, sub_tiles = await items_of(client, lk["target_id"])
                 for t in sub_tiles:
